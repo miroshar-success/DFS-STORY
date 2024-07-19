@@ -20,11 +20,6 @@ const logMemoryUsage = () => {
       `  ${key}: ${Math.round((used[key] / 1024 / 1024) * 100) / 100} MB`
     );
   }
-  //   console.log(`  endingCounts size: ${endingCounts.size}`);
-  //   console.log(`  visitedStates size: ${visitedStates.size}`);
-  //   console.log(`  pathStack length: ${pathStack.length}`);
-  //   console.log(`  allErrors length: ${allErrors.length}`);
-  //   console.log(`  Max objects between choices: ${maxObjectsBetweenChoices}`);
 };
 
 // Function to process JSON content
