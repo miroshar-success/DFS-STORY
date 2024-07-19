@@ -1,3 +1,5 @@
+"use strict";
+
 const fs = require("fs");
 const { Story } = require("inkjs");
 const winston = require("winston");
@@ -5,10 +7,13 @@ const readlineSync = require("readline-sync");
 const crypto = require("crypto");
 const util = require("util");
 const path = require("path");
-const { stringify } = require("querystring");
+const VisitedDatabase = require("./visitedDatabase");
+
+const visited_db_path = temp_db_path();
+const visited_db = new VisitedDatabase(db_path);
 
 // Load the Ink JSON story file
-const storyFilePath = "./data/OneNightOneBar.json"; //process.argv[2];
+const storyFilePath = "data/OneNightOneBar.json"; //process.argv[2];
 const outputFilePrefix = "progress"; //process.argv[3] || "progress";
 
 // Function to generate a unique file name prefix
@@ -21,6 +26,15 @@ const generateUniquePrefix = (storyFilePath) => {
     .split(".")[0];
   return `${storyFileName}_${timestamp}`;
 };
+
+function temp_db_path() {
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[:]/g, "-")
+    .replace(/[T]/g, "_")
+    .split(".")[0];
+  return `temp/sqlite3_${timestamp}.db`;
+}
 
 // Generate unique prefix for this session
 const uniquePrefix = generateUniquePrefix(storyFilePath);
@@ -254,6 +268,7 @@ const clearKnotsExceedingMaxObjects = () => {
   knotErrorTypes.clear();
 };
 
+let aaa = 0;
 const processChoices = (stateJson, path, depth, stateRepetitions) => {
   if (depth > maxDepthReached) {
     maxDepthReached = depth;
@@ -269,6 +284,7 @@ const processChoices = (stateJson, path, depth, stateRepetitions) => {
   const currentKnot = story.state.currentPathString.split(".")[0];
   lastKnownKnot = currentKnot; // Update the last known knot
 
+  // console.log(story.state.currentPathString);
   const stateKey = getStateHash(stateJson);
   if (visitedStates.has(stateKey)) {
     return;
@@ -324,6 +340,9 @@ const processChoices = (stateJson, path, depth, stateRepetitions) => {
     logger.ending(
       `Reached an ending: ${JSON.stringify(endingDetail)} at depth ${depth}`
     );
+    // console.log(
+    //   `Reached an ending: ${JSON.stringify(endingDetail)} at depth ${depth}`
+    // );
     return;
   }
 
@@ -382,7 +401,7 @@ const dfsTraversal = async () => {
     // Log progress every 1000 choices
     if (choicesCount % 1000 === 0) {
       console.log(`Processed ${choicesCount} choices. Current depth: ${depth}`);
-      logMemoryUsage();
+      // logMemoryUsage();
     }
 
     // Ask to continue every 100,000 endings
@@ -390,7 +409,7 @@ const dfsTraversal = async () => {
       askToContinue();
     }
 
-    monitorMemoryUsage(fileCounter);
+    // monitorMemoryUsage(fileCounter);
   }
 
   // Ensure final report is written when traversal completes
@@ -485,7 +504,7 @@ const consolidateProgress = () => {
   };
 
   for (let i = 0; i < fileCounter; i++) {
-    const fileName = `${uniquePrefix}_checkpoint_${i}.json`;
+    const fileName = `log/${uniquePrefix}_checkpoint_${i}.json`;
     if (fs.existsSync(fileName)) {
       const fileData = JSON.parse(fs.readFileSync(fileName, "utf-8"));
       fileData.endingCounts.forEach(([key, value]) => {
@@ -533,28 +552,11 @@ const closeLogger = () => {
   });
 };
 
-// Function to print the call stack
-function printCallStack(story1) {
-  const callStack = story1.state.callStack;
-  console.log("Call Stack:");
-  callStack.elements.forEach((element, index) => {
-    console.log(`Stack Level ${index + 1}:`);
-    console.log(`  Type: ${element.type}`);
-    console.log(`  Path: ${element.currentPointer}`);
-    console.log(`  Variables:`);
-    for (const [key, value] of Object.entries(element.temporaryVariables)) {
-      console.log(`    ${key}: ${value}`);
-    }
-  });
-}
-
 const func = () => {
   while (story.canContinue) {
     const line = story.Continue();
 
-    console.log(line);
-    backUpJson = story.state.toJson();
-    console.log(backUpJson);
+    let backUpJson = story.state.toJson();
     for (let i = 0; i < story.currentChoices.length; i++) {
       let choice = story.currentChoices[i];
       story.ChooseChoiceIndex(choice.index);
@@ -566,25 +568,25 @@ const func = () => {
   }
 };
 
-func();
+// func();
 // Main execution
 (async () => {
-  try {
-    // Initialize the path stack with the initial state
-    const initialStateJson = JSON.stringify(story.state.toJson());
-    pathStack.push({
-      stateJson: initialStateJson,
-      path: [],
-      depth: 0,
-      objectCount: 0,
-    });
-    console.log("Starting traversal with initial state:", initialStateJson);
-
-    console.time("dfsTraversal");
-    await dfsTraversal();
-    console.timeEnd("dfsTraversal");
-  } finally {
-    // Ensure the final report is written and the logger is closed
-    await writeFinalReportAndCloseLogger();
-  }
+  // VisitedDatabase.t
+  // try {
+  //   // Initialize the path stack with the initial state
+  //   const initialStateJson = JSON.stringify(story.state.toJson());
+  //   pathStack.push({
+  //     stateJson: initialStateJson,
+  //     path: [],
+  //     depth: 0,
+  //     objectCount: 0,
+  //   });
+  //   console.log("Starting traversal with initial state:", initialStateJson);
+  //   console.time("dfsTraversal");
+  //   await dfsTraversal();
+  //   console.timeEnd("dfsTraversal");
+  // } finally {
+  //   // Ensure the final report is written and the logger is closed
+  //   await writeFinalReportAndCloseLogger();
+  // }
 })();

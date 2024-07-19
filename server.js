@@ -1,9 +1,12 @@
+"use strict";
+
 const express = require("express");
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const { Story } = require("inkjs");
 const cors = require("cors");
+const { strict } = require("assert");
 
 const app = express();
 const port = 3000;
@@ -22,22 +25,25 @@ const logMemoryUsage = () => {
   }
 };
 
+let aaa = 0;
 // Function to process JSON content
 const recursionDFS = (story) => {
   while (story.canContinue) {
-    const line = story.Continue();
-
+    let line = story.Continue();
     // console.log(line);
-    backUpJson = story.state.toJson();
-    // console.log(backUpJson);
-    for (let i = 0; i < story.currentChoices.length; i++) {
-      let choice = story.currentChoices[i];
-      story.ChooseChoiceIndex(choice.index);
-      recursionDFS(story);
-
-      logMemoryUsage();
-      story.state.LoadJson(backUpJson);
-    }
+    // console.log(story.state.currentPathString);
+  }
+  const backUpJson = story.state.toJson();
+  for (let i = 0; i < story.currentChoices.length; i++) {
+    let choice = story.currentChoices[i];
+    story.ChooseChoiceIndex(choice.index);
+    recursionDFS(story);
+    story.state.LoadJson(backUpJson);
+  }
+  if (story.currentChoices.length == 0) {
+    console.log(++aaa);
+    // console.log(story.currentText);
+    if (aaa % 1000 == 0) logMemoryUsage();
   }
 };
 
@@ -59,7 +65,9 @@ app.post("/upload", upload.single("file"), (req, res) => {
     try {
       const inkJson = JSON.parse(data.replace(/^\uFEFF/, ""));
       const story = new Story(inkJson);
+      console.time("dfsTraversal");
       recursionDFS(story);
+      console.timeEnd("dfsTraversal");
 
       res.send("File processed successfully");
     } catch (parseErr) {
