@@ -1,0 +1,345 @@
+const fs = require('fs');
+const { Story } = require('inkjs');
+const winston = require('winston');
+const readlineSync = require('readline-sync');
+
+// Load the Ink JSON story file
+const storyFilePath = process.argv[2];
+const outputFilePrefix = process.argv[3] || 'progress';
+
+// Extract the --continue argument value if provided
+const continueArg = process.argv.find(arg => arg.startsWith('--continue='));
+const BATCH_SIZE = continueArg ? parseInt(continueArg.split('=')[1]) : 10000;  // smaller batch size
+
+const inkJson = JSON.parse(fs.readFileSync(storyFilePath, 'utf-8').replace(/^\uFEFF/, ''));
+
+// Initialize InkJS Story
+const story = new Story(inkJson);
+
+const visitedStates = new Set();
+const pathStack = [];
+const endingCounts = new Map();
+const stateMap = new Map();
+const endingDetails = new Map();
+let stateCounter = 0;
+let choicesCount = 0;
+let endingsCount = 0;
+const allErrors = [];  // This will store all errors encountered
+let totalErrors = 0;
+let fileCounter = 0;
+let batchCounter = 0;
+const MEMORY_LIMIT = 3.5 * 1024 * 1024 * 1024; // 3.5 GB
+
+// Configure Winston logger
+const logger = winston.createLogger({
+    level: 'info',
+    format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+    ),
+    transports: [
+        new winston.transports.Console(),
+        new winston.transports.File({ filename: `${outputFilePrefix}_log.txt` })  // log to file
+    ]
+});
+
+// Helper function to get a unique key for the current state
+const getStateKey = () => JSON.stringify(story.state.toJson());
+const getStateIdentifier = (stateKey) => {
+    if (!stateMap.has(stateKey)) {
+        stateMap.set(stateKey, `State${stateCounter++}`);
+    }
+    return stateMap.get(stateKey);
+};
+
+// Helper function to get the current knot name and last line of text
+const getCurrentEndingDetail = () => {
+    const lastLine = story.currentText.trim();
+    const currentKnot = story.state.currentPathString;
+    return {
+        knot: currentKnot,
+        lastLine: lastLine || ''
+    };
+};
+
+// Error handler
+const handleError = (message, type, path, lastChoice) => {
+    const currentKnot = story.state.currentPathString;
+    const errorDetail = { 
+        message, 
+        type, 
+        knot: currentKnot, 
+        path: [...path],
+        lastChoice: lastChoice ? lastChoice.text : 'No choices made',
+        stateBefore: lastChoice ? lastChoice.stateBefore : null,
+        stateAfter: lastChoice ? lastChoice.stateAfter : null
+    };
+    allErrors.push(errorDetail);
+    totalErrors++;
+    logger.error(`Error (${type}): ${message} at ${currentKnot}`);
+    logger.error(`Last Choice: ${errorDetail.lastChoice}`);
+};
+
+// Replace the existing story.onError with this:
+story.onError = (message, type) => {
+    handleError(message, type, truePath, lastMadeChoice);
+};
+
+// Function to display progress
+const displayProgress = () => {
+    console.clear();
+    logger.info(`Choices processed: ${choicesCount}`);
+    logger.info(`Endings reached: ${endingsCount}`);
+    logger.info(`Errors encountered: ${totalErrors}`);
+};
+
+// Function to write progress to file incrementally
+const writeProgressToFile = () => {
+    const progressData = {
+        endingCounts: Array.from(endingCounts.entries()),
+        endingDetails: Array.from(endingDetails.entries()),
+        stateCounter,
+        choicesCount,
+        endingsCount,
+        allErrors
+    };
+    const fileName = `${outputFilePrefix}_${fileCounter++}.json`;
+    const writeStream = fs.createWriteStream(fileName);
+    writeStream.write(JSON.stringify(progressData, null, 2));
+    writeStream.end();
+    endingCounts.clear(); // Clear ending counts to free up memory
+    endingDetails.clear(); // Clear ending details to free up memory
+    visitedStates.clear(); // Clear visited states to free up memory
+    stateMap.clear(); // Clear state map to free up memory
+    logger.info(`Progress written to ${fileName}`);
+};
+
+// Function to generate a report
+const generateReport = (includeAllErrors = false) => {
+    logger.info(`Report after ${endingsCount} endings:`);
+    logger.info(`Choices processed: ${choicesCount}`);
+    logger.info(`Endings reached: ${endingsCount}`);
+    logger.info(`Errors encountered: ${totalErrors}`);
+
+    if (includeAllErrors && allErrors.length > 0) {
+        logger.info("\nAll errors encountered:");
+        allErrors.forEach((error, index) => {
+            logger.info(`Error ${index + 1}: (${error.type}) ${error.message} at knot ${error.knot}`);
+            logger.info(`Path: ${error.path.join(' -> ')}`);
+            logger.info(`Last Choice: ${error.lastChoice}`);
+            if (error.stateBefore) {
+                logger.info(`State before last choice: ${error.stateBefore}`);
+            }
+            if (error.stateAfter) {
+                logger.info(`State after last choice: ${error.stateAfter}`);
+            }
+        });
+    } else if (allErrors.length > 0) {
+        logger.info("\nErrors encountered in current batch:");
+        allErrors.forEach((error, index) => {
+            logger.info(`Error ${index + 1}: (${error.type}) ${error.message} at knot ${error.knot}`);
+            logger.info(`Path: ${error.path.join(' -> ')}`);
+            logger.info(`Last Choice: ${error.lastChoice}`);
+            if (error.stateBefore) {
+                logger.info(`State before last choice: ${error.stateBefore}`);
+            }
+            if (error.stateAfter) {
+                logger.info(`State after last choice: ${error.stateAfter}`);
+            }
+        });
+    }
+};
+
+// Function to ask the user whether to continue or stop
+const askToContinue = () => {
+    generateReport();  // Report errors for the current batch
+    const response = readlineSync.question('Do you want to continue? (yes/no): ');
+    return response.trim().toLowerCase() === 'yes';
+};
+
+// Function to clean up temporary files
+const cleanUpTempFiles = () => {
+    for (let i = 0; i < fileCounter; i++) {
+        const fileName = `${outputFilePrefix}_${i}.json`;
+        if (fs.existsSync(fileName)) {
+            fs.unlinkSync(fileName);
+            logger.info(`Temporary file ${fileName} deleted.`);
+        }
+    }
+};
+
+// Function to monitor and manage memory usage
+const monitorMemoryUsage = () => {
+    const used = process.memoryUsage().heapUsed;
+    if (used > MEMORY_LIMIT) {
+        logger.warn(`Memory usage exceeded ${MEMORY_LIMIT / (1024 * 1024)} MB. Writing progress to file and clearing memory.`);
+        writeProgressToFile();
+        if (global.gc) {
+            global.gc(); // Force garbage collection
+        }
+    }
+};
+
+// Initialize the path stack with the initial state
+pathStack.push({ stateKey: getStateKey(), path: [], depth: 0, stateBefore: getStateKey() });
+
+let lastMadeChoice = null;
+let truePath = [];
+
+while (pathStack.length > 0) {
+    const { stateKey, path, depth } = pathStack.pop();
+    const stateIdentifier = getStateIdentifier(stateKey);
+    choicesCount++;
+
+    // Update the true path to reflect where we actually are
+    truePath = path;
+
+    // Log full path every 100th ending
+    if (endingsCount % 100 === 0) {
+        displayProgress();
+        logger.info(`Current state: ${stateIdentifier}, Path taken: ${truePath.join(' -> ')}, Depth: ${depth}`);
+    }
+
+    if (visitedStates.has(stateKey)) {
+        continue;
+    }
+    visitedStates.add(stateKey);
+
+    // Load the state
+    story.state.LoadJson(JSON.parse(stateKey));
+
+    try {
+        if (story.canContinue) {
+            story.ContinueMaximally();
+        }
+
+        if (story.currentChoices.length === 0) {
+            const endingDetail = getCurrentEndingDetail();
+            pathData.push({ path: truePath, choices: truePath.length, detail: endingDetail });
+            endingCounts.set(stateIdentifier, (endingCounts.get(stateIdentifier) || 0) + 1);
+            endingDetails.set(stateIdentifier, endingDetail);
+            endingsCount++;
+
+            // Write progress to file and clear memory every BATCH_SIZE endings
+            if (++batchCounter >= BATCH_SIZE) {
+                writeProgressToFile();
+                batchCounter = 0;
+
+                // Ask the user whether to continue
+                if (!askToContinue()) {
+                    logger.info("Process stopped by user.");
+                    generateReport(true); // Generate a final comprehensive report
+                    cleanUpTempFiles();
+                    process.exit(0);
+                }
+            }
+        } else {
+            for (const choice of story.currentChoices) {
+                // Add the current choice to truePath right before processing it
+                truePath.push(choice.text);
+
+                // Save the state before making the choice
+                const stateBefore = JSON.stringify(story.state.toJson());
+                story.ChooseChoiceIndex(choice.index);
+                const stateAfter = JSON.stringify(story.state.toJson());
+                
+                lastMadeChoice = {
+                    text: choice.text,
+                    stateBefore,
+                    stateAfter
+                };
+
+                pathStack.push({ 
+                    stateKey: stateAfter, 
+                    path: [...truePath], 
+                    depth: depth + 1
+                });
+
+                // Restore the state after saving it for the next iteration
+                story.state.LoadJson(JSON.parse(stateBefore));
+
+                // Remove the last choice from truePath after processing
+                truePath.pop();
+            }
+        }
+    } catch (error) {
+        handleError(error.message, error.type, truePath, lastMadeChoice);
+        // Remove the last choice from truePath if an error occurs
+        if (truePath.length > 0) {
+            truePath.pop();
+        }
+    }
+
+    // Monitor memory usage at each iteration
+    monitorMemoryUsage();
+}
+
+// Write final progress to file
+writeProgressToFile();
+generateReport(true); // Generate a final comprehensive report
+cleanUpTempFiles();
+
+// Function to generate the final comprehensive report
+const writeFinalReport = () => {
+    const consolidatedData = consolidateProgress();
+    const averageChoices = consolidatedData.pathData.length > 0 ? consolidatedData.pathData.reduce((sum, data) => sum + data.choices, 0) / consolidatedData.pathData.length : 0;
+    const mostReachedEnding = [...consolidatedData.endingCounts.entries()].reduce((a, b) => a[1] > b[1] ? a : b, [null, 0]);
+    const leastReachedEnding = [...consolidatedData.endingCounts.entries()].reduce((a, b) => a[1] < b[1] ? a : b, [null, Infinity]);
+
+    console.clear();
+    logger.info(`Average number of choices: ${averageChoices}`);
+    logger.info(`Most reached ending: ${mostReachedEnding[0]} (Reached ${mostReachedEnding[1]} times)`);
+    logger.info(`Least reached ending: ${leastReachedEnding[0]} (Reached ${leastReachedEnding[1]} times)`);
+
+    if (mostReachedEnding[0]) {
+        const mostDetail = consolidatedData.endingDetails.get(mostReachedEnding[0]);
+        logger.info(`Most reached ending detail: Knot = ${mostDetail.knot}, Last line = "${mostDetail.lastLine}"`);
+    }
+    if (leastReachedEnding[0]) {
+        const leastDetail = consolidatedData.endingDetails.get(leastReachedEnding[0]);
+        logger.info(`Least reached ending detail: Knot = ${leastDetail.knot}, Last line = "${leastDetail.lastLine}"`);
+    }
+
+    // Print detailed path statistics
+    logger.info("Path details:");
+    consolidatedData.pathData.forEach((data, index) => {
+        logger.info(`Path ${index + 1}: ${data.path.join(' -> ')}, Choices: ${data.choices}, Ending detail: Knot = ${data.detail.knot}, Last line = "${data.detail.lastLine}"`);
+    });
+
+    // Print error details
+    if (consolidatedData.errors.length > 0) {
+        logger.info("\nErrors encountered:");
+        consolidatedData.errors.forEach((error, index) => {
+            logger.info(`Error ${index + 1}: (${error.type}) ${error.message} at knot ${error.knot}`);
+            logger.info(`Path: ${error.path.join(' -> ')}`);
+            logger.info(`State: ${error.state}`);
+        });
+    }
+};
+
+// Function to read all progress files and consolidate data
+const consolidateProgress = () => {
+    let consolidatedData = {
+        pathData: [],
+        endingCounts: new Map(),
+        endingDetails: new Map(),
+        errors: [...allErrors] // Use allErrors to store every error encountered
+    };
+
+    for (let i = 0; i < fileCounter; i++) {
+        const fileName = `${outputFilePrefix}_${i}.json`;
+        const fileData = JSON.parse(fs.readFileSync(fileName, 'utf-8'));
+        consolidatedData.pathData.push(...fileData.pathData);
+        fileData.endingCounts.forEach(([key, value]) => {
+            consolidatedData.endingCounts.set(key, (consolidatedData.endingCounts.get(key) || 0) + value);
+        });
+        fileData.endingDetails.forEach(([key, value]) => {
+            consolidatedData.endingDetails.set(key, value);
+        });
+        consolidatedData.errors.push(...fileData.errors);
+    }
+
+    return consolidatedData;
+};
+
+writeFinalReport();

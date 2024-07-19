@@ -1,0 +1,24 @@
+{
+  "name": "john",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --max_old_space_size=4096 --stack_size=2048 server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "crypto": "^1.0.1",
+    "express": "^4.19.2",
+    "fs": "^0.0.1-security",
+    "inkjs": "^2.2.4",
+    "multer": "^1.4.5-lts.1",
+    "path": "^0.12.7",
+    "readline-sync": "^1.4.10",
+    "util": "^0.12.5",
+    "winston": "^3.13.1"
+  }
+}

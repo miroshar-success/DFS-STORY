@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>File Upload</title>
+  </head>
+  <body>
+    <h1>Upload JSON File</h1>
+    <form id="uploadForm">
+      <input type="file" id="fileInput" accept=".json" />
+      <button type="button" onclick="uploadFile()">Upload</button>
+    </form>
+    <p id="status"></p>
+
+    <script>
+      async function uploadFile() {
+        const fileInput = document.getElementById("fileInput");
+        const status = document.getElementById("status");
+
+        if (fileInput.files.length === 0) {
+          status.textContent = "Please select a file.";
+          return;
+        }
+
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+          const response = await fetch("http://localhost:3000/upload", {
+            method: "POST",
+            body: formData,
+          });
+
+          const result = await response.text();
+          status.textContent = result;
+        } catch (error) {
+          console.error("Error uploading file:", error);
+          status.textContent = "Error uploading file.";
+        }
+      }
+    </script>
+  </body>
+</html>
