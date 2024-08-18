@@ -11,10 +11,7 @@ console.log("Reading JSON file...");
 
 const inkJson = JSON.parse(
   fs
-    .readFileSync(
-      "./data/JSON_Story_Files_01/BackToSecretAgentSchool20.json",
-      "utf-8"
-    )
+    .readFileSync("./data/JSON_Story_Files_01/SchoolsOut.json", "utf-8")
     .replace(/^\uFEFF/, "")
 );
 
@@ -40,6 +37,7 @@ const play = async () => {
     while (story.canContinue) {
       const text = story.Continue();
       process.stdout.write(text);
+      console.log(story.currentTags.join(", "));
       if (story.currentTags && story.currentTags.length) {
         process.stdout.write(" # tags: " + story.currentTags.join(", ") + "\n");
       }
