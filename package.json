@@ -4,7 +4,7 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "start": "node --max_old_space_size=4096 --stack_size=2048 claude.js"
+    "start": "node --max_old_space_size=4096 --stack_size=2048 server.js"
   },
   "keywords": [],
   "author": "",

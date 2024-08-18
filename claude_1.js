@@ -12,20 +12,8 @@ const PathDatabase = require("./pathDatabase");
 const path_db_path = temp_db_path();
 const path_db = new PathDatabase(path_db_path);
 
-// Load the Ink JSON story file
-const storyFilePath = "data/Story_TheIntercept.json"; //process.argv[2];
-const outputFilePrefix = "progress"; //process.argv[3] || "progress";
-
-// Function to generate a unique file name prefix
-const generateUniquePrefix = (storyFilePath) => {
-  const storyFileName = path.basename(storyFilePath, ".json");
-  const timestamp = new Date()
-    .toISOString()
-    .replace(/[:]/g, "-")
-    .replace(/[T]/g, "_")
-    .split(".")[0];
-  return `${storyFileName}_${timestamp}`;
-};
+const storyFilePath = "data/Story_TheIntercept.json";
+const outputFilePrefix = "progress";
 
 function temp_db_path() {
   const timestamp = new Date()
@@ -36,22 +24,15 @@ function temp_db_path() {
   return `temp/sqlite3_${timestamp}.db`;
 }
 
-// Generate unique prefix for this session
 const uniquePrefix = generateUniquePrefix(storyFilePath);
-
-// Extract the --continue argument value if provided
 const continueArg = process.argv.find((arg) => arg.startsWith("--continue="));
-const BATCH_SIZE = continueArg ? parseInt(continueArg.split("=")[1]) : 20000; // smaller batch size
-const CONTINUE_INTERVAL = 10000000; // New constant for continue interval
+const BATCH_SIZE = continueArg ? parseInt(continueArg.split("=")[1]) : 20000;
+const CONTINUE_INTERVAL = 10000000;
 
 const inkJson = JSON.parse(
   fs.readFileSync(storyFilePath, "utf-8").replace(/^\uFEFF/, "")
 );
-
-// Initialize InkJS Story
 const story = new Story(inkJson);
-
-// process.exit(0);
 
 let visitedStates = new Set();
 const pathStack = [];
@@ -59,30 +40,27 @@ let endingCounts = new Map();
 let stateCounter = 0;
 let choicesCount = 0;
 let endingsCount = 0;
-const allErrors = []; // This will store all errors encountered
+const allErrors = [];
 let totalErrors = 0;
 let fileCounter = 0;
 let batchCounter = 0;
-const MEMORY_LIMIT = 26 * 1024 * 1024 * 1024; // 26 GB
+const MEMORY_LIMIT = 26 * 1024 * 1024 * 1024;
 let lastMadeChoice = null;
 let truePath = [];
 
-// New variables for depth limit and loop detection
-const MAX_DEPTH = 200; // Set your desired maximum depth
+const MAX_DEPTH = 200;
 let maxDepthReached = 0;
 let maxDepthAborts = 0;
-const LOOP_THRESHOLD = 3; // Set your desired loop threshold
-const MAX_OBJECTS_PER_PATH = 1000; // Maximum number of objects allowed per path
+const LOOP_THRESHOLD = 3;
+const MAX_OBJECTS_PER_PATH = 1000;
 
 let maxObjectsBetweenChoices = 0;
-const MAX_OBJECTS_BETWEEN_CHOICES = 1000; // Adjust this value as needed
+const MAX_OBJECTS_BETWEEN_CHOICES = 1000;
 
 const knotsExceedingMaxObjects = new Set();
-const knotErrorTypes = new Map(); // New Map to track error types per knot
+const knotErrorTypes = new Map();
+let lastKnownKnot = story.state.currentPathString.split(".")[0];
 
-let lastKnownKnot = story.state.currentPathString.split(".")[0]; // Initialize with the starting knot
-
-// Configure Winston logger
 const logger = winston.createLogger({
   levels: {
     error: 0,
@@ -103,23 +81,21 @@ const logger = winston.createLogger({
   transports: [
     new winston.transports.File({
       filename: `${uniquePrefix}_log.txt`,
-      level: "ending", // This file transport will include all levels
+      level: "ending",
     }),
     new winston.transports.Console({
       format: winston.format.combine(
         winston.format.colorize(),
         winston.format.simple()
       ),
-      level: "error", // Only log errors to console
+      level: "error",
     }),
   ],
 });
 
-// Helper function to get a unique hash for the current state
 const getStateHash = (stateJson) =>
   crypto.createHash("sha1").update(stateJson).digest("hex");
 
-// Helper function to get the current knot name and last line of text
 const getCurrentEndingDetail = () => {
   const lastLine = story.currentText.trim();
   const currentKnot =
@@ -130,14 +106,10 @@ const getCurrentEndingDetail = () => {
   };
 };
 
-// Error handler
 const handleError = (message, type, truePath, lastChoice) => {
   const currentKnot = lastKnownKnot;
-
-  // Create a unique key for this knot and error type
   const errorKey = `${currentKnot}:${type}`;
 
-  // Only add the error if we haven't seen this type for this knot before
   if (!knotErrorTypes.has(errorKey)) {
     knotErrorTypes.set(errorKey, true);
 
@@ -161,12 +133,10 @@ const handleError = (message, type, truePath, lastChoice) => {
   }
 };
 
-// Replace the existing story.onError with this:
 story.onError = (message, type) => {
   handleError(message, type, truePath, lastMadeChoice);
 };
 
-// Function to display progress
 const displayProgress = () => {
   console.clear();
   console.log(`Choices processed: ${choicesCount}`);
@@ -183,7 +153,6 @@ const displayProgress = () => {
   logMemoryUsage();
 };
 
-// Function to log memory usage
 const logMemoryUsage = () => {
   const used = process.memoryUsage();
   console.log("Memory usage:");
@@ -199,7 +168,6 @@ const logMemoryUsage = () => {
   console.log(`  Max objects between choices: ${maxObjectsBetweenChoices}`);
 };
 
-// Function to write progress to file incrementally
 const writeCheckpoint = (counter) => {
   const progressData = {
     endingCounts: Array.from(endingCounts.entries()),
@@ -216,13 +184,12 @@ const writeCheckpoint = (counter) => {
   logger.info(`Checkpoint written to ${fileName}`);
   endingCounts.clear();
   visitedStates.clear();
-  maxObjectsBetweenChoices = 0; // Reset after writing checkpoint
+  maxObjectsBetweenChoices = 0;
   if (global.gc) {
     global.gc();
   }
 };
 
-// Function to ask the user whether to continue or stop
 const askToContinue = () => {
   displayProgress();
   const response = readlineSync.question("Do you want to continue? (yes/no): ");
@@ -234,10 +201,8 @@ const askToContinue = () => {
   return true;
 };
 
-// Function to clean up temporary files
 const cleanUpTempFiles = () => {
   for (let i = 0; i < fileCounter - 1; i++) {
-    // Leave the last checkpoint file
     const fileName = `${uniquePrefix}_checkpoint_${i}.json`;
     if (fs.existsSync(fileName)) {
       fs.unlinkSync(fileName);
@@ -246,7 +211,6 @@ const cleanUpTempFiles = () => {
   }
 };
 
-// Function to monitor and manage memory usage
 const monitorMemoryUsage = (counter) => {
   const used = process.memoryUsage().heapUsed;
   if (
@@ -259,7 +223,7 @@ const monitorMemoryUsage = (counter) => {
       } MB or max objects between choices (${maxObjectsBetweenChoices}) exceeded threshold. Writing checkpoint and clearing memory.`
     );
     writeCheckpoint(counter);
-    maxObjectsBetweenChoices = 0; // Reset after writing checkpoint
+    maxObjectsBetweenChoices = 0;
   }
 };
 
@@ -278,19 +242,16 @@ const processChoices = (stateJson, path, depth, stateRepetitions) => {
     return;
   }
 
-  // Load the state
   story.state.LoadJson(JSON.parse(stateJson));
   const currentKnot = story.state.currentPathString.split(".")[0];
-  lastKnownKnot = currentKnot; // Update the last known knot
+  lastKnownKnot = currentKnot;
 
-  // console.log(story.state.currentPathString);
   const stateKey = getStateHash(stateJson);
   if (visitedStates.has(stateKey)) {
     return;
   }
   visitedStates.add(stateKey);
 
-  // Detect loops using state repetitions within this specific path
   const currentRepetitions = stateRepetitions.get(stateKey) || 0;
   if (currentRepetitions >= LOOP_THRESHOLD) {
     handleError(
@@ -303,7 +264,7 @@ const processChoices = (stateJson, path, depth, stateRepetitions) => {
   }
   stateRepetitions.set(stateKey, currentRepetitions + 1);
 
-  let objectsBetweenChoices = 0; // Local variable, reset for each call
+  let objectsBetweenChoices = 0;
 
   if (story.canContinue) {
     try {
@@ -339,9 +300,6 @@ const processChoices = (stateJson, path, depth, stateRepetitions) => {
     logger.ending(
       `Reached an ending: ${JSON.stringify(endingDetail)} at depth ${depth}`
     );
-    // console.log(
-    //   `Reached an ending: ${JSON.stringify(endingDetail)} at depth ${depth}`
-    // );
     return;
   }
 
@@ -371,14 +329,14 @@ const processChoices = (stateJson, path, depth, stateRepetitions) => {
   }
 };
 
-var pushStack_can_continue = () => {
+const pushStack_can_continue = () => {
   if (pathStack.length > 0) {
     return true;
   }
   return !!path_db.getSize();
 };
 
-var pushStack_pop = () => {
+const pushStack_pop = () => {
   if (pathStack.length > 0) {
     return pathStack.pop();
   }
@@ -393,15 +351,12 @@ var pushStack_pop = () => {
 const dfsTraversal = async () => {
   let batchCounter = 0;
 
-  // while (pathStack.length > 0) {
   while (pushStack_can_continue()) {
-    // const { stateJson, path, depth } = pathStack.pop();
     const { stateJson, path, depth } = pushStack_pop();
 
     choicesCount++;
     truePath = path;
 
-    // Track state repetitions for each path individually
     let stateRepetitions = new Map();
 
     try {
@@ -424,31 +379,23 @@ const dfsTraversal = async () => {
       displayProgress();
     }
 
-    // Log progress every 1000 choices
     if (choicesCount % 10000 === 0) {
       console.log(`Processed ${choicesCount} choices. Current depth: ${depth}`);
-      // logMemoryUsage();
     }
 
-    // Ask to continue every 100,000 endings
     if (endingsCount % CONTINUE_INTERVAL === 0 && endingsCount > 0) {
       askToContinue();
     }
-
-    // monitorMemoryUsage(fileCounter);
   }
 
-  // Ensure final report is written when traversal completes
   await writeFinalReport();
 };
 
-// Function to write the final comprehensive report and close the logger
 const writeFinalReportAndCloseLogger = async () => {
   await writeFinalReport();
   await finalize();
 };
 
-// Function to generate the final comprehensive report
 const writeFinalReport = async () => {
   const consolidatedData = consolidateProgress();
   const mostReachedEnding = [...consolidatedData.endingCounts.entries()].reduce(
@@ -492,7 +439,6 @@ const writeFinalReport = async () => {
     );
   }
 
-  // Print error details
   if (consolidatedData.errors.length > 0) {
     console.log("\nErrors encountered:");
     consolidatedData.errors.forEach((error, index) => {
@@ -512,18 +458,16 @@ const writeFinalReport = async () => {
   console.log("Script execution completed.");
 };
 
-// Function to clean up and close the logger
 const finalize = async () => {
   cleanUpTempFiles();
   await closeLogger();
 };
 
-// Function to read all progress files and consolidate data
 const consolidateProgress = () => {
   let consolidatedData = {
     endingCounts: new Map(),
     endingDetails: new Map(),
-    errors: [...allErrors], // Use allErrors to store every error encountered
+    errors: [...allErrors],
     maxDepthReached: maxDepthReached,
     maxDepthAborts: maxDepthAborts,
     maxObjectsBetweenChoices: maxObjectsBetweenChoices,
@@ -562,10 +506,8 @@ const consolidateProgress = () => {
   return consolidatedData;
 };
 
-// Flag to ensure logger is closed only once
 let loggerClosed = false;
 
-// Function to close the logger safely
 const closeLogger = () => {
   return new Promise((resolve) => {
     if (!loggerClosed) {
@@ -588,17 +530,13 @@ const func = () => {
       story.ChooseChoiceIndex(choice.index);
       func();
 
-      // logMemoryUsage();
       story.state.LoadJson(backUpJson);
     }
   }
 };
 
-// func();
-// Main execution
 (async () => {
   try {
-    // Initialize the path stack with the initial state
     const initialStateJson = JSON.stringify(story.state.toJson());
     pathStack.push({
       stateJson: initialStateJson,
@@ -611,7 +549,6 @@ const func = () => {
     await dfsTraversal();
     console.timeEnd("dfsTraversal");
   } finally {
-    // Ensure the final report is written and the logger is closed
     await writeFinalReportAndCloseLogger();
   }
 })();

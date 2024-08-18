@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const { Story } = require("inkjs");
 const cors = require("cors");
-const { strict } = require("assert");
+const crypto = require("crypto");
 
 const app = express();
 const port = 3000;
@@ -25,25 +25,54 @@ const logMemoryUsage = () => {
   }
 };
 
-let aaa = 0;
+const getCurrentPathVisitCount = (story) => {
+  const currentPathString = story.state.currentPathString;
+  // console.log(currentPathString);
+  return story.state.VisitCountAtPathString(currentPathString);
+};
+
+let choicesCount = 0;
+let choicesOverCount = 0;
+let endingsCount = 0;
+let maxDepthReached = 0;
+let depthReached = 1;
 // Function to process JSON content
 const recursionDFS = (story) => {
+  if (maxDepthReached < depthReached) {
+    maxDepthReached = depthReached;
+  }
+  if (getCurrentPathVisitCount(story)) {
+    console.log("already visited");
+    return;
+  }
+
+  let loop = 0;
   while (story.canContinue) {
+    choicesCount++;
     let line = story.Continue();
+
     // console.log(line);
     // console.log(story.state.currentPathString);
+    if (loop++ >= 200) {
+      choicesOverCount++;
+      console.log("over max choices");
+      return;
+    }
   }
   const backUpJson = story.state.toJson();
   for (let i = 0; i < story.currentChoices.length; i++) {
     let choice = story.currentChoices[i];
     story.ChooseChoiceIndex(choice.index);
+
+    depthReached++;
     recursionDFS(story);
+    depthReached--;
+
     story.state.LoadJson(backUpJson);
   }
   if (story.currentChoices.length == 0) {
-    console.log(++aaa);
-    // console.log(story.currentText);
-    if (aaa % 1000 == 0) logMemoryUsage();
+    endingsCount++;
+    // logMemoryUsage();
   }
 };
 
@@ -52,6 +81,12 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // API to upload a JSON file
 app.post("/upload", upload.single("file"), (req, res) => {
+  choicesCount = 0;
+  choicesOverCount = 0;
+  endingsCount = 0;
+  maxDepthReached = 0;
+  depthReached = 1;
+
   const filePath = path.join(__dirname, req.file.path);
 
   // Read the JSON file
@@ -69,7 +104,11 @@ app.post("/upload", upload.single("file"), (req, res) => {
       recursionDFS(story);
       console.timeEnd("dfsTraversal");
 
-      res.send("File processed successfully");
+      // res.send("File processed successfully");
+
+      res.send(
+        `choicesCount: ${choicesCount}, choicesOverCount: ${choicesOverCount}, endingsCount: ${endingsCount}, maxDepthReached: ${maxDepthReached}`
+      );
     } catch (parseErr) {
       console.error("Error parsing JSON:", parseErr);
       res.status(400).send("Invalid JSON format");
