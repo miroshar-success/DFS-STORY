@@ -11,7 +11,10 @@ console.log("Reading JSON file...");
 
 const inkJson = JSON.parse(
   fs
-    .readFileSync("./data/JSON_Story_Files_01/SchoolsOut.json", "utf-8")
+    .readFileSync(
+      "./data/JSON_Story_Files_01/StagedTheEnthrallingEduardo.json",
+      "utf-8"
+    )
     .replace(/^\uFEFF/, "")
 );
 

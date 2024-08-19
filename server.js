@@ -36,12 +36,13 @@ let choicesOverCount = 0;
 let endingsCount = 0;
 let maxDepthReached = 0;
 let depthReached = 1;
+let pathTooDeep = 0;
 
 // Function to process JSON content
 const recursionDFS = (story) => {
   console.log(story.state.currentPathString);
-  console.log(maxDepthReached);
   if (depthReached > 1024) {
+    pathTooDeep++;
     return;
   }
   if (maxDepthReached < depthReached) {
@@ -119,7 +120,13 @@ app.post("/upload", upload.single("file"), (req, res) => {
       // res.send("File processed successfully");
 
       res.send(
-        `choicesCount: ${choicesCount}, choicesOverCount: ${choicesOverCount}, endingsCount: ${endingsCount}, maxDepthReached: ${maxDepthReached}`
+        [
+          `Total Choices Clicked: ${choicesCount}`,
+          `Total Endings Reached: ${endingsCount}`,
+          `Maximum Depth Of A Path: ${maxDepthReached}`,
+          `Paths Too Deep To Crawl: ${pathTooDeep}`,
+          `Over Choises: ${choicesOverCount}`,
+        ].join("\n")
       );
     } catch (parseErr) {
       console.error("Error parsing JSON:", parseErr);
