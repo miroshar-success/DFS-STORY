@@ -39,6 +39,7 @@
                     type="file"
                     id="formFile"
                     name="file"
+                    accept=".json"
                   />
                 </div>
                 <div class="d-grid">
@@ -106,32 +107,40 @@
         document.getElementById("loadingOverlay").style.display = "flex";
 
         const formData = new FormData();
-        formData.append("file", e.target.file.files[0]);
+        const fileInput = e.target.file.files[0];
 
-        try {
-          const response = await fetch("/upload", {
-            method: "POST",
-            body: formData,
-          });
+        // Check if the file is a .json file
+        if (fileInput && fileInput.type === "application/json") {
+          formData.append("file", fileInput);
 
-          const result = await response.text();
+          try {
+            const response = await fetch("/upload", {
+              method: "POST",
+              body: formData,
+            });
 
-          // Set the result in the modal body
-          document.getElementById("modalBody").innerText = result;
+            const result = await response.text();
 
-          // Hide the loading overlay
+            // Set the result in the modal body
+            document.getElementById("modalBody").innerText = result;
+
+            // Hide the loading overlay
+            document.getElementById("loadingOverlay").style.display = "none";
+
+            // Show the modal
+            const resultModal = new bootstrap.Modal(
+              document.getElementById("resultModal")
+            );
+            resultModal.show();
+          } catch (error) {
+            console.error("Error during upload:", error);
+            // Hide the loading overlay in case of error
+            document.getElementById("loadingOverlay").style.display = "none";
+            alert("An error occurred during the upload process.");
+          }
+        } else {
           document.getElementById("loadingOverlay").style.display = "none";
-
-          // Show the modal
-          const resultModal = new bootstrap.Modal(
-            document.getElementById("resultModal")
-          );
-          resultModal.show();
-        } catch (error) {
-          console.error("Error during upload:", error);
-          // Hide the loading overlay in case of error
-          document.getElementById("loadingOverlay").style.display = "none";
-          alert("An error occurred during the upload process.");
+          alert("Please upload a valid .json file.");
         }
       };
     </script>
