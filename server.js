@@ -25,12 +25,6 @@ const logMemoryUsage = () => {
   }
 };
 
-let visitedPath = [];
-
-const isVisited = (path) => {
-  return visitedPath.indexOf(path) == -1 ? false : true;
-};
-
 const getCurrentPathVisitCount = (story) => {
   const currentPathString = story.state.currentPathString;
   // console.log(currentPathString);
@@ -42,16 +36,9 @@ let choicesOverCount = 0;
 let endingsCount = 0;
 let maxDepthReached = 0;
 let depthReached = 1;
-let loopCount = 0;
 
 // Function to process JSON content
 const recursionDFS = (story) => {
-  /*
-  if (isVisited(story.state.currentPathString)) {
-    loopCount++;
-  }
-  visitedPath.push(story.state.currentPathString);
-  */
   console.log(story.state.currentPathString);
   console.log(maxDepthReached);
   if (depthReached > 1024) {
