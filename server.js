@@ -40,7 +40,7 @@ let pathTooDeep = 0;
 
 // Function to process JSON content
 const recursionDFS = (story) => {
-  console.log(story.state.currentPathString);
+  // console.log(story.state.currentPathString);
   if (depthReached > 1024) {
     pathTooDeep++;
     return;
@@ -85,7 +85,10 @@ const recursionDFS = (story) => {
   }
   if (story.currentChoices.length == 0) {
     endingsCount++;
-    // logMemoryUsage();
+    if (endingsCount % 1000 === 0) {
+      console.log(`============= current ending count: ${endingsCount}`);
+      logMemoryUsage();
+    }
   }
 };
 
