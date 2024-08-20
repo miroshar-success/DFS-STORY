@@ -85,7 +85,7 @@ const recursionDFS = (story) => {
   }
   if (story.currentChoices.length == 0) {
     endingsCount++;
-    if (endingsCount % 1000 === 0) {
+    if (endingsCount % 1000 == 0) {
       console.log(`============= current ending count: ${endingsCount}`);
       logMemoryUsage();
     }
